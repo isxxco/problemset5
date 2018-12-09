@@ -1,126 +1,118 @@
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.io.InputStreamReader;
+import java.io.*;
 import java.util.Arrays;
+/**
+ * This class will serve as the intermediary between our ATM program and
+ * the database of BankAccounts. It'll be responsible for fetching accounts
+ * when users try to login, as well as updating those accounts after any
+ * changes are made.
+ */
 
 public class Database {
-	
-	private String path;
 	private String[] accounts;
 	
-	public Database(String path) throws FileNotFoundException, IOException {
-		this.path = path;
-		this.accounts = getAllAccounts();
-	}
-	
-	/**
-	 * Initializes the database with all accounts.
-	 * 
-	 * @return an array of all accounts
-	 */
-	
-	public String[] getAllAccounts() throws FileNotFoundException, IOException {
-		int count = 0;
+	public String[] getAllAccounts() throws IOException {
 		String[] accounts = new String[10];
 		
-		FileReader altered = null;
-		InputStreamReader original = null;
-		try {
-			altered = new FileReader(System.getProperty("user.dir") + File.separator + path);			
-		} catch (FileNotFoundException e) {
-			original = new InputStreamReader(getClass().getResourceAsStream(path));
-		}
-		
-		try (BufferedReader br = new BufferedReader(original != null ? original : altered)) {
+		int index = 0;
+		try(BufferedReader br = new BufferedReader(new FileReader("accounts-db.txt"))) {
 			String line;
 			
 			while ((line = br.readLine()) != null) {
-				if (count >= accounts.length) {
+				if (index >= accounts.length) {
 					accounts = Arrays.copyOf(accounts, accounts.length + 10);
 				}
-				accounts[count++] = line;
+				
+				accounts[index++] = line;
 			}
 		}
 		
-		return Arrays.copyOf(accounts, count);
+		return Arrays.copyOf(accounts, index);
 	}
 	
-	/**
-	 * Retrieves an account by account number.
-	 * 
-	 * @param accountNumber the acocunt number of the account to retrieve
-	 * @return a BankAccount
-	 */
-	
-	public BankAccount getAccount(long accountNumber) {
-		for (String account : accounts) {
-			if (account.startsWith(String.valueOf(accountNumber)) && account.endsWith("Y")) {
-				return new BankAccount(account);
-			}
-		}
+	public BankAccount getAccount(long accountNumber) throws Exception {
+		BankAccount account = null;
 		
-		return null;
-	}
-	
-	/**
-	 * Updates a BankAccount.
-	 * 
-	 * @param account the primary account being updated
-	 * @param destination the secondary account being updated
-	 * @throws IOException 
-	 */
-	
-	public void updateAccount(BankAccount account, BankAccount destination) throws IOException {
-		boolean newAccount = true;
-		
-		for (int i = 0; i < accounts.length; i++) {			
-			if (accounts[i].startsWith(String.valueOf(account.getAccountNumber()))) {
-				accounts[i] = account.toString();
-				newAccount = false;
-			}
-			
-			if (destination != null) {
-				if (accounts[i].startsWith(String.valueOf(destination.getAccountNumber()))) {
-					accounts[i] = destination.toString();
+		try(BufferedReader br = new BufferedReader(new FileReader("accounts-db.txt"))) {
+			String line;
+			while ((line = br.readLine()) != null) {
+				long acctNum = Long.parseLong(line.substring(0,9));
+				
+				if (acctNum == accountNumber && line.charAt(148) == 'Y') {
+					int pin = Integer.parseInt(line.substring(9, 13));
+					double balance = Double.parseDouble(line.substring(13, 28));
+					String lname = line.substring(28, 48).trim();
+					String fname = line.substring(48, 63).trim();
+					String dob = line.substring(63, 71);
+					long phone = Long.parseLong(line.substring(71, 81));
+					String address = line.substring(81, 111).trim();
+					String city = line.substring(111, 141).trim();
+					String state = line.substring(141, 143);
+					String postalcode = line.substring(143, 148);
+					char status = line.charAt(148);
+					
+					account = new BankAccount(acctNum, balance, new User(pin, fname, lname, dob, phone, address, city, state, postalcode, status));
+					break;
 				}
 			}
 		}
-		
-		if (newAccount) {
-			accounts = Arrays.copyOf(accounts, accounts.length + 1);
-			accounts[accounts.length - 1] = account.toString();
+		catch(IOException e) {
+			System.out.print(e.getMessage());
 		}
+				
+		return account;
+	}
+	
+	public void updateAccount(BankAccount account, BankAccount destination) throws IOException {
+		accounts = getAllAccounts();
 		
-		try (BufferedWriter bw = new BufferedWriter(new FileWriter(System.getProperty("user.dir") + File.separator + path))) {
-			for (String acct : accounts) {
-				bw.write(acct);
+		try (BufferedWriter bw = new BufferedWriter(new FileWriter("accounts-db.txt"))) {
+			
+			if (account != null) {
+				boolean newAccount = true;
+				
+				for (int i = 0; i < accounts.length; i++) {
+					if (accounts[i].startsWith(String.valueOf(account.getAccountNumber()))) {
+						accounts[i] = account.toString();
+						newAccount = false;
+					}
+				}
+				
+				if (newAccount == true) {
+					accounts = Arrays.copyOf(accounts, accounts.length + 1);
+					accounts[accounts.length - 1] = account.toString();
+				}
+			}
+			
+			if(destination != null) {
+				for (int i = 0; i < accounts.length; i++) {
+					if (accounts[i].startsWith(String.valueOf(account.getAccountNumber()))) {
+						accounts[i] = destination.toString();
+					}
+				}
+			}
+			
+			for (int i = 0; i < accounts.length; i++) {
+				bw.write(accounts[i]);
 				bw.newLine();
 			}
 		}
+	
 	}
 	
-	/**
-	 * Retrieves the largest account number in the database.
-	 * 
-	 * @return the largest account number
-	 */
-	
-	public long getMaxAccountNumber() {
-		long max = -1L;
-		
-		for (String account : accounts) {
-			long accountNumber = Long.parseLong(account.substring(0, 9));
-			
-			if (accountNumber > max) {
-				max = accountNumber;
+	public long maxNumber() {
+		try (BufferedReader br = new BufferedReader(new FileReader("accounts-db.txt"))) {
+			String line;
+			long max = 100000001;
+			while ((line = br.readLine()) != null) {
+				if (Long.parseLong(line.substring(0, 9)) > max) {
+					max = Long.parseLong(line.substring(0, 9));
+				}
 			}
+			return max;
 		}
-		
-		return max;
+		catch (IOException e) {
+			System.out.println("No accounts.");
+			return 100000001;
+		}
 	}
 }
